@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -13,14 +14,21 @@ async def send_messages(message):
         try:
             reader, writer = connection
 
-            writer.write((account_hash + "\n").encode())
-            writer.write((message + "\n\n").encode())
+            data = await reader.read(100)
+            logging.debug(msg=data.decode(), extra={"type": "sender"})
 
-            print('Close the connection')
+            writer.write((account_hash + "\n").encode())
+
+            data = await reader.read(100)
+            logging.debug(msg=data.decode(), extra={"type": "sender"})
+
+            writer.write((message + "\n\n").encode())
+            logging.debug(msg=message, extra={"type": "send"})
+
             writer.close()
 
         except asyncio.CancelledError:
-            print("Ошибка сетевого подключения")
+            logging.error(msg="Ошибка сетевого подключения")
 
 
 @asynccontextmanager
@@ -33,4 +41,9 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
-asyncio.run(send_messages("Я снова тестирую чатик. Это третье сообщение."))
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(levelname)s:%(type)s:%(message)s',
+    )
+    asyncio.run(send_messages("Я снова тестирую чатик. Это третье сообщение."))

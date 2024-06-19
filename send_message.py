@@ -1,4 +1,5 @@
 import os
+import json
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -15,16 +16,23 @@ async def send_messages(message):
             reader, writer = connection
 
             data = await reader.read(100)
+
             logging.debug(msg=data.decode(), extra={"type": "sender"})
 
-            writer.write((account_hash + "\n").encode())
+            writer.write(("287e6fd8-288e-11ef-abed-0242ac11000" + "\n").encode())
 
             data = await reader.read(100)
-            logging.debug(msg=data.decode(), extra={"type": "sender"})
 
-            writer.write((message + "\n\n").encode())
-            logging.debug(msg=message, extra={"type": "send"})
+            if not json.loads(data.decode().split("\n")[0]):
+                logging.debug("Неизвестный токен. Проверьте его или зарегистрируйте заново.", extra={"type": "sender"})
 
+            else:
+                logging.debug(msg=data.decode(), extra={"type": "sender"})
+
+                writer.write((message + "\n\n").encode())
+                logging.debug(msg=message, extra={"type": "send"})
+
+            logging.debug("Закрытие соединения", extra={"type": "sender"})
             writer.close()
 
         except asyncio.CancelledError:

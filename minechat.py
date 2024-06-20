@@ -39,8 +39,7 @@ def get_settings():
     return parser.parse_args()
 
 
-async def get_chat_messages():
-    settings = get_settings()
+async def get_chat_messages(settings):
     async with create_chat_connection(settings.host, settings.port) as connection:
         reader, writer = connection
 
@@ -69,4 +68,9 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
-asyncio.run(get_chat_messages())
+async def main():
+    settings = get_settings()
+    await get_chat_messages(settings)
+
+
+asyncio.run(main())

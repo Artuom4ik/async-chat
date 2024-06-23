@@ -41,10 +41,10 @@ async def authorise(account_hash, reader, writer):
 
     logging.debug(msg=data.decode().split("\n")[1], extra={"type": "sender"})
         
-    await send_message(reader, writer)
+    await submit_message(reader, writer)
 
 
-async def send_message(reader, writer):
+async def submit_message(reader, writer):
     try:
         message = input()
 

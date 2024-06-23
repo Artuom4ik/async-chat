@@ -18,14 +18,14 @@ def get_settings():
         "-ho",
         "--host",
         type=str,
-        default=os.getenv("HOST"),
+        default=os.getenv("GET_HOST"),
         help="Your host. For example: minechat.dvmn.org",
     )
     parser.add_argument(
         "-p",
         "--port",
         type=int,
-        default=os.getenv("PORT"),
+        default=os.getenv("GET_PORT"),
         help="Your port. For example: 5000"
     )
     parser.add_argument(

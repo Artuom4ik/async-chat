@@ -8,6 +8,10 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 
+def escape_stickiness_removed(text):
+    return text.replace("\\n", " ").strip()
+
+
 async def register(reader, writer):
     data = await reader.read(100)
 
@@ -16,7 +20,7 @@ async def register(reader, writer):
     data = await reader.read(100)
     logging.debug(msg=data.decode())
 
-    username = input()
+    username = escape_stickiness_removed(input())
 
     writer.write((username + "\n").encode())
 
@@ -46,7 +50,7 @@ async def authorise(account_hash, reader, writer):
 
 async def submit_message(reader, writer):
     try:
-        message = input()
+        message = escape_stickiness_removed(input())
 
         writer.write((message + "\n\n").encode())
 

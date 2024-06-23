@@ -9,50 +9,6 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 
-def get_settings():
-    parser = argparse.ArgumentParser(
-        description='This is async chat. You can send messages',
-    )
-
-    parser.add_argument(
-        "-t",
-        "--token",
-        type=str,
-        default="",
-        help="Your authorization token.",
-    )
-
-    parser.add_argument(
-        "-ho",
-        "--host",
-        type=str,
-        default=os.getenv("POST_HOST"),
-        help="Your host. For example: minechat.dvmn.org",
-    )
-
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        default=os.getenv("POST_PORT"),
-        help="Your port. For example: 5050"
-    )
-
-    parser.add_argument(
-        "-n",
-        "--name",
-        type=str,
-        default="",
-        help="If you are not authorized, you can enter a login to register",
-    )
-    
-    return parser.parse_args()
-
-
-def escape_stickiness_removed(text):
-    return text.replace("\\n", " ").strip()
-
-
 async def register(reader, writer):
     data = await reader.read(100)
 
@@ -61,7 +17,7 @@ async def register(reader, writer):
     data = await reader.read(100)
     logging.debug(msg=data.decode())
 
-    username = input() if not settings.name else settings.name
+    username = input()
 
     writer.write((escape_stickiness_removed(username) + "\n").encode())
 
@@ -91,7 +47,7 @@ async def authorise(account_hash, reader, writer):
 
 async def submit_message(reader, writer):
     try:
-        message = escape_stickiness_removed(input())
+        message = input()
 
         writer.write((message + "\n\n").encode())
 

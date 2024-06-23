@@ -1,42 +1,60 @@
 import os
 import json
 import asyncio
+import aiofiles
 import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
 
-async def send_messages(message):
-    load_dotenv()
-    account_hash = os.getenv("ACCOUNT_HASH")
+async def register(reader, writer):
+    data = await reader.read(100)
 
-    async with create_chat_connection("minechat.dvmn.org", 5050) as connection:
-        try:
-            reader, writer = connection
+    writer.write("\n".encode())
 
-            data = await reader.read(100)
+    data = await reader.read(100)
+    logging.debug(msg=data.decode())
 
-            logging.debug(msg=data.decode(), extra={"type": "sender"})
+    username = input()
 
-            writer.write(("287e6fd8-288e-11ef-abed-0242ac11000" + "\n").encode())
+    writer.write((username + "\n").encode())
 
-            data = await reader.read(100)
+    response = await reader.readline()
 
-            if not json.loads(data.decode().split("\n")[0]):
-                logging.debug("Неизвестный токен. Проверьте его или зарегистрируйте заново.", extra={"type": "sender"})
+    auth_data = json.loads(response.decode().strip())
+    
+    writer.close()
 
-            else:
-                logging.debug(msg=data.decode(), extra={"type": "sender"})
+    async with aiofiles.open(auth_file_name, 'w') as file:
+        await file.write(json.dumps(auth_data))
 
-                writer.write((message + "\n\n").encode())
-                logging.debug(msg=message, extra={"type": "send"})
+    return auth_data    
 
-            logging.debug("Закрытие соединения", extra={"type": "sender"})
-            writer.close()
 
-        except asyncio.CancelledError:
-            logging.error(msg="Ошибка сетевого подключения")
+async def authorise(account_hash, reader, writer):
+    data = await reader.read(200)
+
+    writer.write((account_hash + "\n").encode())
+
+    data = await reader.read(200)
+
+    logging.debug(msg=data.decode().split("\n")[1], extra={"type": "sender"})
+        
+    await send_message(reader, writer)
+
+
+async def send_message(reader, writer):
+    try:
+        message = input()
+
+        writer.write((message + "\n\n").encode())
+
+        logging.debug("Закрытие соединения")
+        writer.close()
+
+    except asyncio.CancelledError:
+        logging.error(msg="Ошибка сетевого подключения")
 
 
 @asynccontextmanager
@@ -49,9 +67,32 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
+async def main():
+    if os.path.exists(auth_file_name):
+        async with aiofiles.open(auth_file_name, 'r') as file:
+            account_data = await file.read()
+
+        account_data = json.loads(account_data)
+
+        async with create_chat_connection(host, port) as (reader, writer):
+            await authorise(account_data["account_hash"], reader, writer)
+
+    else:
+        async with create_chat_connection(host, port) as (reader, writer):
+            account_data = await register(reader, writer)
+        
+        async with create_chat_connection(host, port) as (reader, writer):
+            await authorise(account_data["account_hash"], reader, writer)
+
+
+
 if __name__ == "__main__":
+    load_dotenv()
+    auth_file_name = "auth.json"
+    host = os.getenv("HOST")
+    port = os.getenv("POST_PORT")
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(levelname)s:%(type)s:%(message)s',
+        format='%(levelname)s:sender:%(message)s',
     )
-    asyncio.run(send_messages("Я снова тестирую чатик. Это третье сообщение."))
+    asyncio.run(main())

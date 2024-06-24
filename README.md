@@ -62,22 +62,22 @@ ___
 ___
 >### Как запустить
 
-Проект включает в себя два скрипта `minechat.py` и `minechat-interact`
+Проект включает в себя два скрипта `minechat-message-history.py` и `minechat-interact`
 
-- `minechat.py` - скрипт для получения истории сообщений. Данный скрипт сохраняет историюю сообщений в файл.
+- `minechat-message-history.py` - скрипт для получения истории сообщений. Данный скрипт сохраняет историюю сообщений в файл.
 
 - Для запуска данного скрипта достаточно написать в консоли команду
 
 `Linux`
 
 ```bash
-python3 minechat.py
+python3 minechat-message-history.py
 ```
 
 `Windows`
 
 ```bash
-python minechat.py
+python minechat-message-history.py
 ```
 ___
 
@@ -107,22 +107,22 @@ ___
 `Linux`
 
 ```bash
-python3 minechat.py -ho minechat.dvmn.org -p 5000 -hp messages.txt
+python3 minechat-message-history.py -ho minechat.dvmn.org -p 5000 -hp messages.txt
 ```
 
 ```bash
-python3 minechat.py --host minechat.dvmn.org --port 5000 --history_path messages.txt
+python3 minechat-message-history.py --host minechat.dvmn.org --port 5000 --history_path messages.txt
 ```
 ___
 
 `Windows`
 
 ```bash
-python minechat.py -ho minechat.dvmn.org -p 5000 -hp messages.txt
+python minechat-message-history.py -ho minechat.dvmn.org -p 5000 -hp messages.txt
 ```
 
 ```bash
-python minechat.py --host minechat.dvmn.org --port 5000 --history_path messages.txt
+python minechat-message-history.py --host minechat.dvmn.org --port 5000 --history_path messages.txt
 ```
 ___
 
@@ -165,7 +165,7 @@ ___
 ___
 >### Пример работы скрптов
 
-- `minechat.py`
+- `minechat-message-history.py`
 
 ##### Отображение в консоли истории сообщений
 ![pic1](pictures/minechat_1.png)

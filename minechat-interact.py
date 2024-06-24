@@ -45,7 +45,7 @@ def get_settings():
         default="",
         help="If you are not authorized, you can enter a login to register",
     )
-    
+
     return parser.parse_args()
 
 
@@ -68,13 +68,13 @@ async def register(reader, writer):
     response = await reader.readline()
 
     auth_data = json.loads(response.decode().strip())
-    
+
     writer.close()
 
     async with aiofiles.open(auth_file_name, 'w') as file:
         await file.write(json.dumps(auth_data))
 
-    return auth_data    
+    return auth_data
 
 
 async def authorise(account_hash, reader, writer):
@@ -85,7 +85,7 @@ async def authorise(account_hash, reader, writer):
     data = await reader.read(200)
 
     logging.debug(msg=data.decode().split("\n")[1], extra={"type": "sender"})
-        
+
     await submit_message(reader, writer)
 
 
@@ -119,7 +119,7 @@ async def main():
     if settings.token:
         async with create_chat_connection(host, port) as (reader, writer):
             await authorise(settings.token, reader, writer)
-    
+
     elif os.path.exists(auth_file_name):
         async with aiofiles.open(auth_file_name, 'r') as file:
             account_data = await file.read()
@@ -132,10 +132,9 @@ async def main():
     else:
         async with create_chat_connection(host, port) as (reader, writer):
             account_data = await register(reader, writer)
-        
+
         async with create_chat_connection(host, port) as (reader, writer):
             await authorise(account_data["account_hash"], reader, writer)
-
 
 
 if __name__ == "__main__":

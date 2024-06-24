@@ -47,13 +47,15 @@ async def get_chat_messages(settings):
             try:
                 message = await reader.readline()
 
-                decode_message = f"{datetime.datetime.now().strftime('[%d.%m.%y %H:%M]')} {message.decode('utf-8').strip()}\n"
+                decode_message = f"""
+{datetime.datetime.now().strftime('[%d.%m.%y %H:%M]')} \
+{message.decode('utf-8').strip()}\n"""
 
                 async with aiofiles.open(settings.history_path, 'a') as file:
                     await file.write(decode_message)
-                
+
                 print(decode_message)
-            
+
             except asyncio.CancelledError:
                 print("Ошибка сетевого подключения")
 

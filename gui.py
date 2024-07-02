@@ -1,11 +1,13 @@
 import os
-import time
+import datetime
 import argparse
-import tkinter as tk
 import asyncio
-from tkinter.scrolledtext import ScrolledText
+import tkinter as tk
 from enum import Enum
+from tkinter.scrolledtext import ScrolledText
+from contextlib import asynccontextmanager
 
+import aiofiles
 from dotenv import load_dotenv
 
 
@@ -44,7 +46,7 @@ def get_settings():
 
     parser.add_argument(
         "-gh",
-        "--host",
+        "--get_host",
         type=str,
         default=os.getenv("GET_HOST"),
         help="Your host. For example: minechat.dvmn.org",
@@ -52,7 +54,7 @@ def get_settings():
 
     parser.add_argument(
         "-ph",
-        "--host",
+        "--post_host",
         type=str,
         default=os.getenv("POST_HOST"),
         help="Your host. For example: minechat.dvmn.org",
@@ -225,17 +227,41 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     )
 
 
-async def generate_msgs(queue):
-    while True:
-        messages_queue.put_nowait(f"Ping {time.time()}")
+async def read_msgs(host, port, queue):
+    async with create_chat_connection(host, port) as connection:
+        reader, writer = connection
 
-        await asyncio.sleep(1)
+        while not reader.at_eof():
+            try:
+                message = await reader.readline()
+
+                decode_message = f"""
+{datetime.datetime.now().strftime('[%d.%m.%y %H:%M]')} \
+{message.decode('utf-8').strip()}\n"""
+
+                messages_queue.put_nowait(message.decode('utf-8'))
+
+                async with aiofiles.open(settings.history_path, 'a') as file:
+                    await file.write(decode_message)
+
+            except asyncio.CancelledError:
+                print("Ошибка сетевого подключения")
+
+
+@asynccontextmanager
+async def create_chat_connection(host, port):
+    reader, writer = await asyncio.open_connection(host, port)
+    try:
+        yield reader, writer
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 async def main():
     await asyncio.gather(
         draw(messages_queue, sending_queue, status_updates_queue),
-        generate_msgs(messages_queue)
+        read_msgs(settings.get_host, settings.get_port, messages_queue)
     )
 
 

@@ -1,8 +1,12 @@
+import os
 import time
+import argparse
 import tkinter as tk
 import asyncio
 from tkinter.scrolledtext import ScrolledText
 from enum import Enum
+
+from dotenv import load_dotenv
 
 
 class TkAppClosed(Exception):
@@ -30,6 +34,71 @@ class SendingConnectionStateChanged(Enum):
 class NicknameReceived:
     def __init__(self, nickname):
         self.nickname = nickname
+
+
+def get_settings():
+    load_dotenv()
+    parser = argparse.ArgumentParser(
+        description='This is async chat. You can see history of messages by your link',
+    )
+
+    parser.add_argument(
+        "-gh",
+        "--host",
+        type=str,
+        default=os.getenv("GET_HOST"),
+        help="Your host. For example: minechat.dvmn.org",
+    )
+
+    parser.add_argument(
+        "-ph",
+        "--host",
+        type=str,
+        default=os.getenv("POST_HOST"),
+        help="Your host. For example: minechat.dvmn.org",
+    )
+
+    parser.add_argument(
+        "-gp",
+        "--get_port",
+        type=int,
+        default=os.getenv("GET_PORT"),
+        help="Your port. For example: 5000"
+    )
+
+    parser.add_argument(
+        "-pp",
+        "--post_port",
+        type=int,
+        default=os.getenv("POST_PORT"),
+        help="Your port. For example: 5050"
+    )
+
+    parser.add_argument(
+        "-t",
+        "--token",
+        type=str,
+        default="",
+        help="Your authorization token.",
+    )
+
+    parser.add_argument(
+        "-n",
+        "--name",
+        type=str,
+        default="",
+        help="If you are not authorized, you can enter a login to register",
+    )
+
+    parser.add_argument(
+        "-hp",
+        "--history_path",
+        type=str,
+        default=os.getenv("HISTORY_PATH"),
+        help="Path to history file. For example: messages.txt"
+    )
+
+    return parser.parse_args()
 
 
 def process_new_message(input_field, sending_queue):
@@ -89,13 +158,30 @@ def create_status_panel(root_frame):
     connections_frame = tk.Frame(status_frame)
     connections_frame.pack(side="left")
 
-    nickname_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    nickname_label = tk.Label(
+        connections_frame,
+        height=1,
+        fg='grey',
+        font='arial 10',
+        anchor='w'
+    )
     nickname_label.pack(side="top", fill=tk.X)
 
-    status_read_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    status_read_label = tk.Label(
+        connections_frame,
+        height=1, fg='grey',
+        font='arial 10',
+        anchor='w'
+    )
     status_read_label.pack(side="top", fill=tk.X)
 
-    status_write_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    status_write_label = tk.Label(
+        connections_frame,
+        height=1,
+        fg='grey',
+        font='arial 10',
+        anchor='w'
+    )
     status_write_label.pack(side="top", fill=tk.X)
 
     return (nickname_label, status_read_label, status_write_label)
@@ -117,11 +203,16 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     input_field = tk.Entry(input_frame)
     input_field.pack(side="left", fill=tk.X, expand=True)
 
-    input_field.bind("<Return>", lambda event: process_new_message(input_field, sending_queue))
+    input_field.bind("<Return>", lambda event: process_new_message(
+        input_field,
+        sending_queue))
 
     send_button = tk.Button(input_frame)
     send_button["text"] = "Отправить"
-    send_button["command"] = lambda: process_new_message(input_field, sending_queue)
+    send_button["command"] = lambda: process_new_message(
+        input_field,
+        sending_queue
+    )
     send_button.pack(side="left")
 
     conversation_panel = ScrolledText(root_frame, wrap='none')
@@ -149,6 +240,7 @@ async def main():
 
 
 if __name__ == '__main__':
+    settings = get_settings()
     loop = asyncio.get_event_loop()
 
     messages_queue = asyncio.Queue()

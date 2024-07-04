@@ -1,4 +1,5 @@
 import os
+import json
 import datetime
 import argparse
 import asyncio
@@ -227,6 +228,18 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     )
 
 
+async def authorise(account_hash, reader, writer):
+    data = await reader.read(200)
+
+    writer.write((account_hash + "\n").encode())
+
+    data = await reader.read(200)
+
+    message = json.loads(data.decode().split("\n")[0])['nickname']
+
+    print(f"Выполнена авторизация. Пользователь {message}.")
+
+
 async def save_messages(filepath, queue):
     message = await queue.get()
 
@@ -258,6 +271,12 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 print("Ошибка сетевого подключения")
 
 
+async def send_msgs(host, port, sending_queue):
+    while True:
+        msg = await sending_queue.get()
+        print(msg)
+
+
 @asynccontextmanager
 async def create_chat_connection(host, port):
     reader, writer = await asyncio.open_connection(host, port)
@@ -269,6 +288,22 @@ async def create_chat_connection(host, port):
 
 
 async def main():
+    post_host = settings.post_host
+    post_port = settings.post_port
+
+    if settings.token:
+        async with create_chat_connection(post_host, post_port) as (reader, writer):
+            await authorise(settings.token, reader, writer)
+
+    elif os.path.exists(auth_file_name):
+        async with aiofiles.open(auth_file_name, 'r') as file:
+            account_data = await file.read()
+
+        account_data = json.loads(account_data)
+
+        async with create_chat_connection(post_host, post_port) as (reader, writer):
+            await authorise(account_data["account_hash"], reader, writer)
+
     await asyncio.gather(
         draw(messages_queue, sending_queue, status_updates_queue),
         read_msgs(
@@ -276,6 +311,11 @@ async def main():
             settings.get_port,
             messages_queue,
             history_message_queue
+        ),
+        send_msgs(
+            settings.post_host,
+            settings.post_port,
+            sending_queue
         )
     )
 
@@ -288,6 +328,8 @@ if __name__ == '__main__':
     messages_queue = asyncio.Queue()
     sending_queue = asyncio.Queue()
     status_updates_queue = asyncio.Queue()
+
+    auth_file_name = "auth.json"
 
     if os.path.exists(settings.history_path):
         with open(settings.history_path, 'r') as file:

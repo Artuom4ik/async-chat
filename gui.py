@@ -227,7 +227,16 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     )
 
 
-async def read_msgs(host, port, queue):
+async def save_messages(filepath, queue):
+    message = await queue.get()
+
+    decode_message = f"{message}\n"
+
+    async with aiofiles.open(filepath, 'a') as file:
+        await file.write(decode_message)
+
+
+async def read_msgs(host, port, messages_queue, history_message_queue):
     async with create_chat_connection(host, port) as connection:
         reader, writer = connection
 
@@ -235,14 +244,15 @@ async def read_msgs(host, port, queue):
             try:
                 message = await reader.readline()
 
-                decode_message = f"""
-{datetime.datetime.now().strftime('[%d.%m.%y %H:%M]')} \
-{message.decode('utf-8').strip()}\n"""
+                message = message.decode('utf-8').strip()
 
-                messages_queue.put_nowait(message.decode('utf-8'))
+                messages_queue.put_nowait(message)
+                history_message_queue.put_nowait(message)
 
-                async with aiofiles.open(settings.history_path, 'a') as file:
-                    await file.write(decode_message)
+                await save_messages(
+                    settings.history_path,
+                    history_message_queue
+                )
 
             except asyncio.CancelledError:
                 print("Ошибка сетевого подключения")
@@ -261,7 +271,12 @@ async def create_chat_connection(host, port):
 async def main():
     await asyncio.gather(
         draw(messages_queue, sending_queue, status_updates_queue),
-        read_msgs(settings.get_host, settings.get_port, messages_queue)
+        read_msgs(
+            settings.get_host,
+            settings.get_port,
+            messages_queue,
+            history_message_queue
+        )
     )
 
 
@@ -269,8 +284,14 @@ if __name__ == '__main__':
     settings = get_settings()
     loop = asyncio.get_event_loop()
 
+    history_message_queue = asyncio.Queue()
     messages_queue = asyncio.Queue()
     sending_queue = asyncio.Queue()
     status_updates_queue = asyncio.Queue()
+
+    if os.path.exists(settings.history_path):
+        with open(settings.history_path, 'r') as file:
+            for line in file.readlines():
+                messages_queue.put_nowait(line.replace('\n', ''))
 
     loop.run_until_complete(main())

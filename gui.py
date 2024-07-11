@@ -228,12 +228,16 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     )
 
 
-async def authorise(account_hash, reader, writer):
-    data = await reader.read(200)
+def escape_stickiness_removed(text):
+    return text.replace("\\n", " ").strip()
 
-    writer.write((account_hash + "\n").encode())
 
-    data = await reader.read(200)
+async def authorise(account_hash, post_reader, post_writer):
+    data = await post_reader.read(200)
+
+    post_writer.write((account_hash + "\n").encode())
+
+    data = await post_reader.read(200)
 
     message = json.loads(data.decode().split("\n")[0])['nickname']
 
@@ -271,10 +275,25 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 print("Ошибка сетевого подключения")
 
 
-async def send_msgs(host, port, sending_queue):
-    while True:
-        msg = await sending_queue.get()
-        print(msg)
+async def send_msgs(post_host, post_port, sending_queue):
+    async with create_chat_connection(post_host, post_port) as (post_reader, post_writer):
+        if settings.token:
+            await authorise(settings.token, post_reader, post_writer)
+
+        elif os.path.exists(auth_file_name):
+            async with aiofiles.open(auth_file_name, 'r') as file:
+                account_data = await file.read()
+
+            account_data = json.loads(account_data)
+
+            await authorise(account_data["account_hash"], post_reader, post_writer)
+
+        while True:
+            message = await sending_queue.get()
+
+            message = escape_stickiness_removed(message)
+
+            post_writer.write((message + "\n\n").encode())
 
 
 @asynccontextmanager
@@ -291,19 +310,6 @@ async def main():
     post_host = settings.post_host
     post_port = settings.post_port
 
-    if settings.token:
-        async with create_chat_connection(post_host, post_port) as (reader, writer):
-            await authorise(settings.token, reader, writer)
-
-    elif os.path.exists(auth_file_name):
-        async with aiofiles.open(auth_file_name, 'r') as file:
-            account_data = await file.read()
-
-        account_data = json.loads(account_data)
-
-        async with create_chat_connection(post_host, post_port) as (reader, writer):
-            await authorise(account_data["account_hash"], reader, writer)
-
     await asyncio.gather(
         draw(messages_queue, sending_queue, status_updates_queue),
         read_msgs(
@@ -313,8 +319,8 @@ async def main():
             history_message_queue
         ),
         send_msgs(
-            settings.post_host,
-            settings.post_port,
+            post_host,
+            post_port,
             sending_queue
         )
     )

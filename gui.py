@@ -1,6 +1,6 @@
 import os
 import json
-import datetime
+import logging
 import argparse
 import asyncio
 import tkinter as tk
@@ -11,6 +11,11 @@ from contextlib import asynccontextmanager
 
 import aiofiles
 from dotenv import load_dotenv
+
+
+class UnixTimeFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        return f"[{int(record.created)}]"
 
 
 class Invalidtoken(Exception):
@@ -240,6 +245,8 @@ def escape_stickiness_removed(text):
 
 
 async def authorise(account_hash, post_reader, post_writer):
+    watchdog_queue.put_nowait('Prompt before auth')
+
     data = await post_reader.read(200)
 
     post_writer.write((account_hash + "\n").encode())
@@ -254,6 +261,8 @@ async def authorise(account_hash, post_reader, post_writer):
     status_updates_queue.put_nowait(NicknameReceived(nickname=nickname))
 
     status_updates_queue.put_nowait(SendingConnectionStateChanged.ESTABLISHED)
+
+    watchdog_queue.put_nowait('Authorization done')
 
 
 async def save_messages(filepath, queue):
@@ -286,6 +295,8 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 messages_queue.put_nowait(message)
                 history_message_queue.put_nowait(message)
 
+                watchdog_queue.put_nowait('New message in chat')
+
                 await save_messages(
                     settings.history_path,
                     history_message_queue
@@ -295,8 +306,7 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 status_updates_queue.put_nowait(
                     ReadConnectionStateChanged.CLOSED
                 )
-
-                print("Ошибка сетевого подключения")
+                watchdog_queue.put_nowait('Connection closed')
 
 
 async def send_msgs(post_host, post_port, sending_queue):
@@ -323,6 +333,8 @@ async def send_msgs(post_host, post_port, sending_queue):
 
             post_writer.write((message + "\n\n").encode())
 
+            watchdog_queue.put_nowait('Message sent')
+
 
 @asynccontextmanager
 async def create_chat_connection(host, port):
@@ -332,6 +344,16 @@ async def create_chat_connection(host, port):
     finally:
         writer.close()
         await writer.wait_closed()
+
+
+async def watch_for_connection():
+    while True:
+        try:
+            msg = await watchdog_queue.get()
+            watchdog_logger.info('Connection is alive. %s', msg)
+        except asyncio.CancelledError:
+            watchdog_logger.warning('Connection aborted')
+            break
 
 
 async def main():
@@ -351,7 +373,8 @@ async def main():
                 post_host,
                 post_port,
                 sending_queue
-            )
+            ),
+            watch_for_connection()
         )
 
     except Invalidtoken:
@@ -362,6 +385,15 @@ async def main():
 
 
 if __name__ == '__main__':
+    formatter = UnixTimeFormatter(
+        '%(asctime)s %(name)s %(levelname)s: %(message)s'
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    logging.basicConfig(level=logging.DEBUG, handlers=[handler,])
+    watchdog_logger = logging.getLogger('watchdog')
+
     settings = get_settings()
     loop = asyncio.get_event_loop()
 
@@ -369,6 +401,7 @@ if __name__ == '__main__':
     messages_queue = asyncio.Queue()
     sending_queue = asyncio.Queue()
     status_updates_queue = asyncio.Queue()
+    watchdog_queue = asyncio.Queue()
 
     auth_file_name = "auth.json"
 

@@ -4,12 +4,19 @@ import datetime
 import argparse
 import asyncio
 import tkinter as tk
+from tkinter import messagebox
 from enum import Enum
 from tkinter.scrolledtext import ScrolledText
 from contextlib import asynccontextmanager
 
 import aiofiles
 from dotenv import load_dotenv
+
+
+class Invalidtoken(Exception):
+    def __init__(self, message="Invalid token", errors=None):
+        super().__init__(message)
+        self.errors = errors
 
 
 class TkAppClosed(Exception):
@@ -239,6 +246,9 @@ async def authorise(account_hash, post_reader, post_writer):
 
     data = await post_reader.read(200)
 
+    if json.loads(data.decode().split("\n")[0]) is None:
+        raise Invalidtoken
+
     message = json.loads(data.decode().split("\n")[0])['nickname']
 
     print(f"Выполнена авторизация. Пользователь {message}.")
@@ -310,20 +320,27 @@ async def main():
     post_host = settings.post_host
     post_port = settings.post_port
 
-    await asyncio.gather(
-        draw(messages_queue, sending_queue, status_updates_queue),
-        read_msgs(
-            settings.get_host,
-            settings.get_port,
-            messages_queue,
-            history_message_queue
-        ),
-        send_msgs(
-            post_host,
-            post_port,
-            sending_queue
+    try:
+        await asyncio.gather(
+            draw(messages_queue, sending_queue, status_updates_queue),
+            read_msgs(
+                settings.get_host,
+                settings.get_port,
+                messages_queue,
+                history_message_queue
+            ),
+            send_msgs(
+                post_host,
+                post_port,
+                sending_queue
+            )
         )
-    )
+
+    except Invalidtoken:
+        messagebox.showinfo(
+            'Неверный токен',
+            'Проверьте токен, сервер его не узнал'
+        )
 
 
 if __name__ == '__main__':

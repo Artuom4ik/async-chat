@@ -249,9 +249,11 @@ async def authorise(account_hash, post_reader, post_writer):
     if json.loads(data.decode().split("\n")[0]) is None:
         raise Invalidtoken
 
-    message = json.loads(data.decode().split("\n")[0])['nickname']
+    nickname = json.loads(data.decode().split("\n")[0])['nickname']
 
-    print(f"Выполнена авторизация. Пользователь {message}.")
+    status_updates_queue.put_nowait(NicknameReceived(nickname=nickname))
+
+    status_updates_queue.put_nowait(SendingConnectionStateChanged.ESTABLISHED)
 
 
 async def save_messages(filepath, queue):
@@ -264,11 +266,19 @@ async def save_messages(filepath, queue):
 
 
 async def read_msgs(host, port, messages_queue, history_message_queue):
+    status_updates_queue.put_nowait(
+        ReadConnectionStateChanged.INITIATED
+    )
+
     async with create_chat_connection(host, port) as connection:
         reader, writer = connection
 
         while not reader.at_eof():
             try:
+                status_updates_queue.put_nowait(
+                    ReadConnectionStateChanged.ESTABLISHED
+                )
+
                 message = await reader.readline()
 
                 message = message.decode('utf-8').strip()
@@ -282,10 +292,18 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 )
 
             except asyncio.CancelledError:
+                status_updates_queue.put_nowait(
+                    ReadConnectionStateChanged.CLOSED
+                )
+
                 print("Ошибка сетевого подключения")
 
 
 async def send_msgs(post_host, post_port, sending_queue):
+    status_updates_queue.put_nowait(
+        SendingConnectionStateChanged.INITIATED
+    )
+
     async with create_chat_connection(post_host, post_port) as (post_reader, post_writer):
         if settings.token:
             await authorise(settings.token, post_reader, post_writer)

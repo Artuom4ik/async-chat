@@ -4,12 +4,14 @@ import logging
 import argparse
 import asyncio
 import tkinter as tk
+import anyio.abc
 import async_timeout
 from tkinter import messagebox
 from enum import Enum
 from tkinter.scrolledtext import ScrolledText
 from contextlib import asynccontextmanager
 
+import anyio
 import aiofiles
 from dotenv import load_dotenv
 
@@ -275,13 +277,18 @@ async def save_messages(filepath, queue):
         await file.write(decode_message)
 
 
-async def read_msgs(host, port, messages_queue, history_message_queue):
+async def read_msgs(
+        get_host,
+        get_port,
+        messages_queue,
+        history_message_queue,
+        watchdog_queue):
     while True:
         status_updates_queue.put_nowait(
             ReadConnectionStateChanged.INITIATED
         )
 
-        async with create_chat_connection(host, port) as connection:
+        async with create_chat_connection(get_host, get_port) as connection:
             reader, writer = connection
 
             status_updates_queue.put_nowait(ReadConnectionStateChanged.ESTABLISHED)
@@ -307,12 +314,13 @@ async def read_msgs(host, port, messages_queue, history_message_queue):
                 status_updates_queue.put_nowait(ReadConnectionStateChanged.CLOSED)
                 watchdog_queue.put_nowait('1s timeout is elapsed')
 
-            except asyncio.CancelledError:
-                status_updates_queue.put_nowait(ReadConnectionStateChanged.CLOSED)
-                watchdog_queue.put_nowait('Connection closed')
 
+async def send_msgs(
+        post_host,
+        post_port,
+        sending_queue,
+        watchdog_queue):
 
-async def send_msgs(post_host, post_port, sending_queue):
     status_updates_queue.put_nowait(
         SendingConnectionStateChanged.INITIATED
     )
@@ -354,30 +362,81 @@ async def watch_for_connection():
         try:
             msg = await watchdog_queue.get()
             watchdog_logger.info('Connection is alive. %s', msg)
+
         except asyncio.CancelledError:
             watchdog_logger.warning('Connection aborted')
             break
 
 
+async def handle_connection(
+        get_host,
+        get_port,
+        post_host,
+        post_port,
+        status_updates_queue,
+        messages_queue,
+        sending_queue,
+        watchdog_queue):
+
+    while True:
+        try:
+            async with anyio.create_task_group() as task_group:
+                status_updates_queue.put_nowait(
+                    ReadConnectionStateChanged.INITIATED
+                )
+                status_updates_queue.put_nowait(
+                    SendingConnectionStateChanged.INITIATED
+                )
+
+                task_group.start_soon(
+                    read_msgs,
+                    get_host,
+                    get_port,
+                    messages_queue,
+                    history_message_queue,
+                    watchdog_queue,
+                )
+                task_group.start_soon(
+                    send_msgs,
+                    post_host,
+                    post_port,
+                    sending_queue,
+                    watchdog_queue,
+                )
+
+                task_group.start_soon(watch_for_connection)
+
+        except BaseException as e:
+            if isinstance(e, ConnectionError):
+                status_updates_queue.put_nowait(
+                    ReadConnectionStateChanged.CLOSED
+                )
+                status_updates_queue.put_nowait(
+                    SendingConnectionStateChanged.CLOSED
+                )
+
+            continue
+
+
 async def main():
+    get_host = settings.get_host
     post_host = settings.post_host
+    get_port = settings.get_port
     post_port = settings.post_port
 
     try:
         await asyncio.gather(
             draw(messages_queue, sending_queue, status_updates_queue),
-            read_msgs(
-                settings.get_host,
-                settings.get_port,
-                messages_queue,
-                history_message_queue
-            ),
-            send_msgs(
-                post_host,
-                post_port,
-                sending_queue
-            ),
-            watch_for_connection()
+            handle_connection(
+                get_host=get_host,
+                get_port=get_port,
+                post_host=post_host,
+                post_port=post_port,
+                status_updates_queue=status_updates_queue,
+                messages_queue=messages_queue,
+                sending_queue=sending_queue,
+                watchdog_queue=watchdog_queue
+            )
         )
 
     except Invalidtoken:

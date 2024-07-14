@@ -4,6 +4,7 @@ import logging
 import argparse
 import asyncio
 import tkinter as tk
+import async_timeout
 from tkinter import messagebox
 from enum import Enum
 from tkinter.scrolledtext import ScrolledText
@@ -275,37 +276,39 @@ async def save_messages(filepath, queue):
 
 
 async def read_msgs(host, port, messages_queue, history_message_queue):
-    status_updates_queue.put_nowait(
-        ReadConnectionStateChanged.INITIATED
-    )
+    while True:
+        status_updates_queue.put_nowait(
+            ReadConnectionStateChanged.INITIATED
+        )
 
-    async with create_chat_connection(host, port) as connection:
-        reader, writer = connection
+        async with create_chat_connection(host, port) as connection:
+            reader, writer = connection
 
-        while not reader.at_eof():
+            status_updates_queue.put_nowait(ReadConnectionStateChanged.ESTABLISHED)
+
             try:
-                status_updates_queue.put_nowait(
-                    ReadConnectionStateChanged.ESTABLISHED
-                )
+                while not reader.at_eof():
+                    async with async_timeout.timeout(2) as cm:
+                        message = await reader.readline()
 
-                message = await reader.readline()
+                        message = message.decode('utf-8').strip()
 
-                message = message.decode('utf-8').strip()
+                        messages_queue.put_nowait(message)
+                        history_message_queue.put_nowait(message)
 
-                messages_queue.put_nowait(message)
-                history_message_queue.put_nowait(message)
+                        watchdog_queue.put_nowait('New message in chat')
 
-                watchdog_queue.put_nowait('New message in chat')
+                        await save_messages(
+                            settings.history_path,
+                            history_message_queue
+                        )
 
-                await save_messages(
-                    settings.history_path,
-                    history_message_queue
-                )
+            except asyncio.TimeoutError:
+                status_updates_queue.put_nowait(ReadConnectionStateChanged.CLOSED)
+                watchdog_queue.put_nowait('1s timeout is elapsed')
 
             except asyncio.CancelledError:
-                status_updates_queue.put_nowait(
-                    ReadConnectionStateChanged.CLOSED
-                )
+                status_updates_queue.put_nowait(ReadConnectionStateChanged.CLOSED)
                 watchdog_queue.put_nowait('Connection closed')
 
 

@@ -4,15 +4,15 @@ import logging
 import argparse
 import asyncio
 import tkinter as tk
-import anyio.abc
-import async_timeout
 from tkinter import messagebox
 from enum import Enum
 from tkinter.scrolledtext import ScrolledText
 from contextlib import asynccontextmanager
 
 import anyio
+import anyio.abc
 import aiofiles
+import async_timeout
 from dotenv import load_dotenv
 
 
@@ -132,22 +132,26 @@ async def update_tk(root_frame, interval=1 / 120):
         except tk.TclError:
             # if application has been destroyed/closed
             raise TkAppClosed()
-        await asyncio.sleep(interval)
+        await anyio.sleep(interval)
 
 
 async def update_conversation_history(panel, messages_queue):
     while True:
-        msg = await messages_queue.get()
+        try:
+            msg = await messages_queue.get()
 
-        panel['state'] = 'normal'
-        if panel.index('end-1c') != '1.0':
-            panel.insert('end', '\n')
-        panel.insert('end', msg)
-        # TODO сделать промотку умной, чтобы не мешала просматривать историю сообщений
-        # ScrolledText.frame
-        # ScrolledText.vbar
-        panel.yview(tk.END)
-        panel['state'] = 'disabled'
+            panel['state'] = 'normal'
+            if panel.index('end-1c') != '1.0':
+                panel.insert('end', '\n')
+            panel.insert('end', msg)
+            # TODO сделать промотку умной, чтобы не мешала просматривать историю сообщений
+            # ScrolledText.frame
+            # ScrolledText.vbar
+            panel.yview(tk.END)
+            panel['state'] = 'disabled'
+
+        except asyncio.CancelledError:
+            break
 
 
 async def update_status_panel(status_labels, status_updates_queue):
@@ -158,15 +162,19 @@ async def update_status_panel(status_labels, status_updates_queue):
     nickname_label['text'] = f'Имя пользователя: неизвестно'
 
     while True:
-        msg = await status_updates_queue.get()
-        if isinstance(msg, ReadConnectionStateChanged):
-            read_label['text'] = f'Чтение: {msg}'
+        try:
+            msg = await status_updates_queue.get()
+            if isinstance(msg, ReadConnectionStateChanged):
+                read_label['text'] = f'Чтение: {msg}'
 
-        if isinstance(msg, SendingConnectionStateChanged):
-            write_label['text'] = f'Отправка: {msg}'
+            if isinstance(msg, SendingConnectionStateChanged):
+                write_label['text'] = f'Отправка: {msg}'
 
-        if isinstance(msg, NicknameReceived):
-            nickname_label['text'] = f'Имя пользователя: {msg.nickname}'
+            if isinstance(msg, NicknameReceived):
+                nickname_label['text'] = f'Имя пользователя: {msg.nickname}'
+
+        except asyncio.CancelledError:
+            break
 
 
 def create_status_panel(root_frame):
@@ -236,11 +244,20 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     conversation_panel = ScrolledText(root_frame, wrap='none')
     conversation_panel.pack(side="top", fill="both", expand=True)
 
-    await asyncio.gather(
-        update_tk(root_frame),
-        update_conversation_history(conversation_panel, messages_queue),
-        update_status_panel(status_labels, status_updates_queue)
-    )
+    async with anyio.create_task_group() as task_group:
+        task_group.start_soon(update_tk, root_frame)
+
+        task_group.start_soon(
+            update_conversation_history,
+            conversation_panel,
+            messages_queue
+        )
+
+        task_group.start_soon(
+            update_status_panel,
+            status_labels,
+            status_updates_queue
+        )
 
 
 def escape_stickiness_removed(text):
@@ -295,7 +312,7 @@ async def read_msgs(
 
             try:
                 while not reader.at_eof():
-                    async with async_timeout.timeout(2) as cm:
+                    async with async_timeout.timeout(10):
                         message = await reader.readline()
 
                         message = message.decode('utf-8').strip()
@@ -311,7 +328,9 @@ async def read_msgs(
                         )
 
             except asyncio.TimeoutError:
-                status_updates_queue.put_nowait(ReadConnectionStateChanged.CLOSED)
+                status_updates_queue.put_nowait(
+                    ReadConnectionStateChanged.CLOSED
+                )
                 watchdog_queue.put_nowait('1s timeout is elapsed')
 
 
@@ -365,7 +384,7 @@ async def watch_for_connection():
 
         except asyncio.CancelledError:
             watchdog_logger.warning('Connection aborted')
-            break
+            raise
 
 
 async def handle_connection(
@@ -378,44 +397,44 @@ async def handle_connection(
         sending_queue,
         watchdog_queue):
 
-    while True:
-        try:
-            async with anyio.create_task_group() as task_group:
-                status_updates_queue.put_nowait(
-                    ReadConnectionStateChanged.INITIATED
-                )
-                status_updates_queue.put_nowait(
-                    SendingConnectionStateChanged.INITIATED
-                )
+    # while True:
+    try:
+        async with anyio.create_task_group() as task_group:
+            status_updates_queue.put_nowait(
+                ReadConnectionStateChanged.INITIATED
+            )
+            status_updates_queue.put_nowait(
+                SendingConnectionStateChanged.INITIATED
+            )
 
-                task_group.start_soon(
-                    read_msgs,
-                    get_host,
-                    get_port,
-                    messages_queue,
-                    history_message_queue,
-                    watchdog_queue,
-                )
-                task_group.start_soon(
-                    send_msgs,
-                    post_host,
-                    post_port,
-                    sending_queue,
-                    watchdog_queue,
-                )
+            task_group.start_soon(
+                read_msgs,
+                get_host,
+                get_port,
+                messages_queue,
+                history_message_queue,
+                watchdog_queue,
+            )
+            task_group.start_soon(
+                send_msgs,
+                post_host,
+                post_port,
+                sending_queue,
+                watchdog_queue,
+            )
 
-                task_group.start_soon(watch_for_connection)
+            task_group.start_soon(watch_for_connection)
 
-        except BaseException as e:
-            if isinstance(e, ConnectionError):
-                status_updates_queue.put_nowait(
-                    ReadConnectionStateChanged.CLOSED
-                )
-                status_updates_queue.put_nowait(
-                    SendingConnectionStateChanged.CLOSED
-                )
+    except BaseException as e:
+        if isinstance(e, ConnectionError):
+            status_updates_queue.put_nowait(
+                ReadConnectionStateChanged.CLOSED
+            )
+            status_updates_queue.put_nowait(
+                SendingConnectionStateChanged.CLOSED
+            )
 
-            continue
+        # continue
 
 
 async def main():
@@ -425,25 +444,33 @@ async def main():
     post_port = settings.post_port
 
     try:
-        await asyncio.gather(
-            draw(messages_queue, sending_queue, status_updates_queue),
-            handle_connection(
-                get_host=get_host,
-                get_port=get_port,
-                post_host=post_host,
-                post_port=post_port,
-                status_updates_queue=status_updates_queue,
-                messages_queue=messages_queue,
-                sending_queue=sending_queue,
-                watchdog_queue=watchdog_queue
+        async with anyio.create_task_group() as task_group:
+            task_group.start_soon(
+                draw,
+                messages_queue,
+                sending_queue,
+                status_updates_queue
             )
-        )
+            task_group.start_soon(
+                handle_connection,
+                get_host,
+                get_port,
+                post_host,
+                post_port,
+                status_updates_queue,
+                messages_queue,
+                sending_queue,
+                watchdog_queue
+            )
 
     except Invalidtoken:
         messagebox.showinfo(
             'Неверный токен',
             'Проверьте токен, сервер его не узнал'
         )
+
+    except (KeyboardInterrupt, TkAppClosed):
+        logging.info("Application closed")
 
 
 if __name__ == '__main__':
@@ -472,4 +499,11 @@ if __name__ == '__main__':
             for line in file.readlines():
                 messages_queue.put_nowait(line.replace('\n', ''))
 
-    loop.run_until_complete(main())
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logging.info("Program interrupted by user")
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+        logging.info("Program exited gracefully")

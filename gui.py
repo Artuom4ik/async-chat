@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 import anyio
 import anyio.abc
+from anyio import create_task_group
 import aiofiles
 import async_timeout
 from dotenv import load_dotenv
@@ -244,7 +245,7 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     conversation_panel = ScrolledText(root_frame, wrap='none')
     conversation_panel.pack(side="top", fill="both", expand=True)
 
-    async with anyio.create_task_group() as task_group:
+    async with create_task_group() as task_group:
         task_group.start_soon(update_tk, root_frame)
 
         task_group.start_soon(
@@ -399,7 +400,7 @@ async def handle_connection(
 
     # while True:
     try:
-        async with anyio.create_task_group() as task_group:
+        async with create_task_group() as task_group:
             status_updates_queue.put_nowait(
                 ReadConnectionStateChanged.INITIATED
             )
@@ -444,7 +445,7 @@ async def main():
     post_port = settings.post_port
 
     try:
-        async with anyio.create_task_group() as task_group:
+        async with create_task_group() as task_group:
             task_group.start_soon(
                 draw,
                 messages_queue,
@@ -484,7 +485,6 @@ if __name__ == '__main__':
     watchdog_logger = logging.getLogger('watchdog')
 
     settings = get_settings()
-    loop = asyncio.get_event_loop()
 
     history_message_queue = asyncio.Queue()
     messages_queue = asyncio.Queue()
@@ -500,10 +500,8 @@ if __name__ == '__main__':
                 messages_queue.put_nowait(line.replace('\n', ''))
 
     try:
-        loop.run_until_complete(main())
+        anyio.run(main)
     except KeyboardInterrupt:
         logging.info("Program interrupted by user")
     finally:
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
         logging.info("Program exited gracefully")

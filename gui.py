@@ -265,7 +265,13 @@ def escape_stickiness_removed(text):
     return text.replace("\\n", " ").strip()
 
 
-async def authorise(account_hash, post_reader, post_writer):
+async def authorise(
+        account_hash,
+        post_reader,
+        post_writer,
+        status_updates_queue,
+        watchdog_queue):
+
     watchdog_queue.put_nowait('Prompt before auth')
 
     data = await post_reader.read(200)
@@ -300,7 +306,10 @@ async def read_msgs(
         get_port,
         messages_queue,
         history_message_queue,
-        watchdog_queue):
+        watchdog_queue,
+        settings,
+        status_updates_queue):
+
     while True:
         status_updates_queue.put_nowait(
             ReadConnectionStateChanged.INITIATED
@@ -339,7 +348,10 @@ async def send_msgs(
         post_host,
         post_port,
         sending_queue,
-        watchdog_queue):
+        watchdog_queue,
+        settings,
+        auth_file_name,
+        status_updates_queue):
 
     status_updates_queue.put_nowait(
         SendingConnectionStateChanged.INITIATED
@@ -347,7 +359,13 @@ async def send_msgs(
 
     async with create_chat_connection(post_host, post_port) as (post_reader, post_writer):
         if settings.token:
-            await authorise(settings.token, post_reader, post_writer)
+            await authorise(
+                settings.token,
+                post_reader,
+                post_writer,
+                status_updates_queue,
+                watchdog_queue
+            )
 
         elif os.path.exists(auth_file_name):
             async with aiofiles.open(auth_file_name, 'r') as file:
@@ -355,7 +373,13 @@ async def send_msgs(
 
             account_data = json.loads(account_data)
 
-            await authorise(account_data["account_hash"], post_reader, post_writer)
+            await authorise(
+                account_data["account_hash"],
+                post_reader,
+                post_writer,
+                status_updates_queue,
+                watchdog_queue
+            )
 
         while True:
             message = await sending_queue.get()
@@ -377,7 +401,7 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
-async def watch_for_connection():
+async def watch_for_connection(watchdog_queue, watchdog_logger):
     while True:
         try:
             msg = await watchdog_queue.get()
@@ -396,7 +420,11 @@ async def handle_connection(
         status_updates_queue,
         messages_queue,
         sending_queue,
-        watchdog_queue):
+        watchdog_queue,
+        history_message_queue,
+        watchdog_logger,
+        settings,
+        auth_file_name):
 
     # while True:
     try:
@@ -415,6 +443,8 @@ async def handle_connection(
                 messages_queue,
                 history_message_queue,
                 watchdog_queue,
+                settings,
+                status_updates_queue
             )
             task_group.start_soon(
                 send_msgs,
@@ -422,9 +452,15 @@ async def handle_connection(
                 post_port,
                 sending_queue,
                 watchdog_queue,
+                settings,
+                auth_file_name,
+                status_updates_queue
             )
 
-            task_group.start_soon(watch_for_connection)
+            task_group.start_soon(
+                watch_for_connection,
+                watchdog_queue,
+                watchdog_logger)
 
     except BaseException as e:
         if isinstance(e, ConnectionError):
@@ -438,43 +474,14 @@ async def handle_connection(
         # continue
 
 
+def load_from_file(history_path, messages_queue):
+    if os.path.exists(history_path):
+        with open(history_path, 'r') as file:
+            for line in file.readlines():
+                messages_queue.put_nowait(line.replace('\n', ''))
+
+
 async def main():
-    get_host = settings.get_host
-    post_host = settings.post_host
-    get_port = settings.get_port
-    post_port = settings.post_port
-
-    try:
-        async with create_task_group() as task_group:
-            task_group.start_soon(
-                draw,
-                messages_queue,
-                sending_queue,
-                status_updates_queue
-            )
-            task_group.start_soon(
-                handle_connection,
-                get_host,
-                get_port,
-                post_host,
-                post_port,
-                status_updates_queue,
-                messages_queue,
-                sending_queue,
-                watchdog_queue
-            )
-
-    except Invalidtoken:
-        messagebox.showinfo(
-            'Неверный токен',
-            'Проверьте токен, сервер его не узнал'
-        )
-
-    except (KeyboardInterrupt, TkAppClosed):
-        logging.info("Application closed")
-
-
-if __name__ == '__main__':
     formatter = UnixTimeFormatter(
         '%(asctime)s %(name)s %(levelname)s: %(message)s'
     )
@@ -494,11 +501,48 @@ if __name__ == '__main__':
 
     auth_file_name = "auth.json"
 
-    if os.path.exists(settings.history_path):
-        with open(settings.history_path, 'r') as file:
-            for line in file.readlines():
-                messages_queue.put_nowait(line.replace('\n', ''))
+    get_host = settings.get_host
+    post_host = settings.post_host
+    get_port = settings.get_port
+    post_port = settings.post_port
 
+    load_from_file(settings.history_path, messages_queue)
+
+    try:
+        async with create_task_group() as task_group:
+            task_group.start_soon(
+                draw,
+                messages_queue,
+                sending_queue,
+                status_updates_queue
+            )
+            task_group.start_soon(
+                handle_connection,
+                get_host,
+                get_port,
+                post_host,
+                post_port,
+                status_updates_queue,
+                messages_queue,
+                sending_queue,
+                watchdog_queue,
+                history_message_queue,
+                watchdog_logger,
+                settings,
+                auth_file_name
+            )
+
+    except Invalidtoken:
+        messagebox.showinfo(
+            'Неверный токен',
+            'Проверьте токен, сервер его не узнал'
+        )
+
+    except (KeyboardInterrupt, TkAppClosed):
+        logging.info("Application closed")
+
+
+if __name__ == '__main__':
     try:
         anyio.run(main)
     except KeyboardInterrupt:

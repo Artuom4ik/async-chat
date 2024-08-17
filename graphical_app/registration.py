@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 import aiofiles
 
 
-def draw(auth_file_path):
+def draw(auth_file_path, host, port):
     root = tk.Tk()
     root.title("Регистрация")
 
@@ -24,7 +24,7 @@ def draw(auth_file_path):
         root,
         text="Зарегистрироваться",
         command=lambda: asyncio.run(
-            register(root, username_entry.get(), auth_file_path)
+            register(root, username_entry.get(), auth_file_path, host, port)
         )
     )
     register_button.pack(pady=10)
@@ -49,9 +49,9 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
-async def register(root, username, auth_file_path):
+async def register(root, username, auth_file_path, host, port):
     try:
-        async with create_chat_connection("minechat.dvmn.org", 5050) as (reader, writer):
+        async with create_chat_connection(host, port) as (reader, writer):
             data = await reader.read(100)
 
             writer.write("\n".encode())

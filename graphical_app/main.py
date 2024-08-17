@@ -12,7 +12,7 @@ from async_timeout import timeout
 from anyio import create_task_group, run
 
 import gui
-import graphical_app.registration as registration
+import registration
 
 
 class UnixTimeFormatter(logging.Formatter):
@@ -321,7 +321,12 @@ async def main(account_hash):
 
 def check_for_registration():
     auth_file_path = "auth.json"
-    token = get_settings().token
+    settings = get_settings()
+
+    token = settings.token
+
+    post_host = settings.post_host
+    post_port = settings.post_port
 
     if token:
         account_hash = token
@@ -331,7 +336,7 @@ def check_for_registration():
             account_data = file.read()
             account_hash = json.loads(account_data)['account_hash']
     else:
-        registration.draw(auth_file_path)
+        registration.draw(auth_file_path, post_host, post_port)
 
         with open(auth_file_path, 'r') as file:
             account_data = file.read()

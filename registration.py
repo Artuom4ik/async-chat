@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 import aiofiles
 
 
-def draw():
+def draw(auth_file_path):
     root = tk.Tk()
     root.title("Регистрация")
 
@@ -23,7 +23,9 @@ def draw():
     register_button = ttk.Button(
         root,
         text="Зарегистрироваться",
-        command=lambda: asyncio.run(register(root, username_entry.get()))
+        command=lambda: asyncio.run(
+            register(root, username_entry.get(), auth_file_path)
+        )
     )
     register_button.pack(pady=10)
 
@@ -47,7 +49,7 @@ async def create_chat_connection(host, port):
         await writer.wait_closed()
 
 
-async def register(root, username):
+async def register(root, username, auth_file_path):
     try:
         async with create_chat_connection("minechat.dvmn.org", 5050) as (reader, writer):
             data = await reader.read(100)
@@ -64,7 +66,7 @@ async def register(root, username):
 
             writer.close()
 
-            async with aiofiles.open(auth_file_name, 'w') as file:
+            async with aiofiles.open(auth_file_path, 'w') as file:
                 await file.write(json.dumps(auth_data))
 
             messagebox.showinfo("Регистрация", "Регистрация прошла успешно!")
@@ -73,8 +75,3 @@ async def register(root, username):
     except Exception as e:
         messagebox.showerror("Регистрация", f"Произошла ошибка: {e}")
         root.destroy()
-
-
-if __name__ == "__main__":
-    auth_file_name = "auth.json"
-    draw()

@@ -338,9 +338,17 @@ def check_for_registration():
     else:
         registration.draw(auth_file_path, post_host, post_port)
 
-        with open(auth_file_path, 'r') as file:
-            account_data = file.read()
-            account_hash = json.loads(account_data)['account_hash']
+        try:
+            with open(auth_file_path, 'r') as file:
+                account_data = file.read()
+                account_hash = json.loads(account_data)['account_hash']
+
+        except FileNotFoundError:
+            messagebox.showerror(
+                "Регистрация",
+                "Произошла ошибка при регистрации. Попробуйте ещё раз."
+            )
+            exit(0)
 
     try:
         run(main, account_hash)

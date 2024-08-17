@@ -12,7 +12,7 @@ from async_timeout import timeout
 from anyio import create_task_group, run
 
 import gui
-import registration
+import graphical_app.registration as registration
 
 
 class UnixTimeFormatter(logging.Formatter):

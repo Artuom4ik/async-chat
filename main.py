@@ -12,6 +12,7 @@ from async_timeout import timeout
 from anyio import create_task_group, run
 
 import gui
+import registration
 
 
 class UnixTimeFormatter(logging.Formatter):
@@ -158,9 +159,8 @@ async def authorise(account_hash, post_reader, post_writer):
 async def send_messages(
         post_host,
         post_port,
-        auth_file_path,
+        account_hash,
         sending_queue,
-        token,
         status_updates_queue,
         watchdog_queue):
 
@@ -173,22 +173,15 @@ async def send_messages(
 
         watchdog_queue.put_nowait("Prompt before auth")
 
-        if token:
-            nickname = await authorise(token, post_reader, post_writer)
+        try:
+            nickname = await authorise(account_hash, post_reader, post_writer)
 
-        elif os.path.exists(auth_file_path):
-            async with aiofiles.open(auth_file_path, 'r') as file:
-                account_data = await file.read()
-                account_hash = json.loads(account_data)['account_hash']
-
-                nickname = await authorise(
-                    account_hash,
-                    post_reader,
-                    post_writer
-                )
-
-        else:
-            raise Invalidtoken
+        except Invalidtoken:
+            messagebox.showerror(
+                "Неверный токен",
+                "Проверьте токен, сервер его не узнал."
+            )
+            exit(0)
 
         status_updates_queue.put_nowait(gui.NicknameReceived(nickname))
         watchdog_queue.put_nowait("Authorization done")
@@ -204,13 +197,12 @@ async def send_messages(
 
 
 async def handle_connection(
-        token,
         get_host,
         get_port,
         post_host,
         post_port,
         history_path,
-        auth_file_path,
+        account_hash,
         watchdog_logger,
         sending_queue,
         messages_queue,
@@ -235,9 +227,8 @@ async def handle_connection(
                     send_messages,
                     post_host,
                     post_port,
-                    auth_file_path,
+                    account_hash,
                     sending_queue,
-                    token,
                     status_updates_queue,
                     watchdog_queue
                 )
@@ -268,7 +259,7 @@ async def handle_connection(
                 break
 
 
-async def main():
+async def main(account_hash):
     formatter = UnixTimeFormatter(
         '%(asctime)s %(name)s %(levelname)s: %(message)s'
     )
@@ -286,11 +277,7 @@ async def main():
     post_host = settings.post_host
     post_port = settings.post_port
 
-    token = settings.token
-
     history_path = settings.history_path
-
-    auth_file_path = "auth.json"
 
     history_message_queue = asyncio.Queue()
     messages_queue = asyncio.Queue()
@@ -307,44 +294,56 @@ async def main():
                 else:
                     break
 
-    try:
-        async with create_task_group() as task_group:
-            task_group.start_soon(
-                gui.draw,
-                messages_queue,
-                sending_queue,
-                status_updates_queue
-            )
-
-            task_group.start_soon(
-                handle_connection,
-                token,
-                get_host,
-                get_port,
-                post_host,
-                post_port,
-                history_path,
-                auth_file_path,
-                watchdog_logger,
-                sending_queue,
-                messages_queue,
-                watchdog_queue,
-                status_updates_queue,
-                history_message_queue
-            )
-
-    except Invalidtoken:
-        messagebox.showerror(
-           "Неверный токен",
-           "Проверьте токен, сервер его не узнал."
+    async with create_task_group() as task_group:
+        task_group.start_soon(
+            gui.draw,
+            messages_queue,
+            sending_queue,
+            status_updates_queue
         )
-        exit(0)
+
+        task_group.start_soon(
+            handle_connection,
+            get_host,
+            get_port,
+            post_host,
+            post_port,
+            history_path,
+            account_hash,
+            watchdog_logger,
+            sending_queue,
+            messages_queue,
+            watchdog_queue,
+            status_updates_queue,
+            history_message_queue
+        )
 
 
-if __name__ == '__main__':
+def check_for_registration():
+    auth_file_path = "auth.json"
+    token = get_settings().token
+
+    if token:
+        account_hash = token
+
+    elif os.path.exists(auth_file_path):
+        with open(auth_file_path, 'r') as file:
+            account_data = file.read()
+            account_hash = json.loads(account_data)['account_hash']
+    else:
+        registration.draw(auth_file_path)
+
+        with open(auth_file_path, 'r') as file:
+            account_data = file.read()
+            account_hash = json.loads(account_data)['account_hash']
+
     try:
-        run(main)
+        run(main, account_hash)
     except asyncio.CancelledError:
         logging.info("Program interrupted by user")
     except BaseException:
         logging.info("Program exited gracefully")
+
+
+if __name__ == '__main__':
+    check_for_registration()
